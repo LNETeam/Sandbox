@@ -1,11 +1,17 @@
 tArgs = {...}
 
+old_clear = term.clear
+debug = true
+
+local _stat,_err = pcall(function()
+
+
 acceptData = false
 
-old_term = term
-
 local eventCallerWhiteList = {instanceController}
-local eventDataBlacklist = {"key","char","mouse_drag"}
+local eventDataBlacklist = {}
+
+local _events = {"char","key","paste","timer","alarm","redstone","terminate","disk","disk_eject","peripheral","peripheral_detach","rednet_message","modem_message","http_success","http_failure","mouse_click","mouse_scroll","mouse_drag","monitor_touch","monitor_resize","term_resize","turtle_inventory"}
 
 local function create( first, ... ) --Derived from parallel API
 	if first ~= nil then
@@ -67,8 +73,10 @@ end
 
 local container = {
 	AddSandboxDefinition = function(self)
-		local controller = {create(function() shell.run(self.prog,unpack(self.args)) end)}
-		self.process = controller[1]
+		--local controller = {create(function() shell.run(self.prog,unpack(self.args)) end)}
+		local controller = {create(instanceController),create(programController)}
+		self.process = controller[2]
+		self.controller = controller[1]
 		self.status = coroutine.status(self.process)
 	end,
 	GetProcess = function(self)
@@ -82,14 +90,14 @@ local container = {
 		coroutine.resume(self.process)
 	end,
 	StartContainer = function(self)
-		runSandbox({self.process},0)
+		runSandbox({self.process,self.controller},0)
 	end,
 }
 
-function string:split(sep)
+function split(s,sep)
         local sep, fields = sep or ":", {}
         local pattern = string.format("([^%s]+)", sep)
-        self:gsub(pattern, function(c) fields[#fields+1] = c end)
+        s:gsub(pattern, function(c) fields[#fields+1] = c end)
         return fields
 end
 
@@ -101,7 +109,9 @@ local function createContainer( env,locked_dir,program,args )
 		status = nil,
 		local_dir = "",
 		args = args and args or nil,
-		prog = program
+		prog = program,
+		controller = nil,
+
 	}
 	setmetatable(temp, {__index = container})
 	return temp
@@ -119,13 +129,14 @@ local _container = createContainer(_G,tArgs[1],tArgs[2],exArgs)
 
 _container:AddSandboxDefinition()
 
---_container:StartContainer()
+_container:StartContainer()
 
 function instanceController()
 
 	while true do 
 		local ev = {os.pullEvent()}
-		if (ev[1] == "keys" and ev[2] == "rightControl") then
+		
+		if (ev[1] == "key" and ev[2] == 157) then
 			os.queueEvent("yield_process")
 			break
 		end
@@ -134,7 +145,8 @@ function instanceController()
 	term.setBackgroundColor(colors.blue)
 	term.setTextColor(colors.white)
 	term.clear = function()
-		old_term.setCursorPos(1,1)
+		term.setBackgroundColor(colors.blue)
+		term.setCursorPos(1,1)
 		term.clearLine()
 		term.write("> ")
 	end
@@ -143,64 +155,119 @@ function instanceController()
 
 	while true do
 		local input = read()
-		local opts = input:split(" ")
-		if (input[1] == "kill") then
+		local opts = split(input," ")
+		if (opts[1] == "kill") then
+			term.setBackgroundColor(colors.black)
+			old_clear()
+			term.setCursorPos(1,1)
 			return
-		elseif (input[1] == "deny" ) then
-			if (input[2] == "-all") then
-				eventDataBlacklist = {"char","key","paste","timer","alarm","redstone","terminate","disk","disk_eject","peripheral","peripheral_detach","rednet_message","modem_message","http_success","http_failure","mouse_click","mouse_scroll","mouse_drag","monitor_touch","monitor_resize","term_resize","turtle_inventory"}
-			elseif (input[2] == "-e") then
+		elseif (opts[1] == "deny" ) then
+			if (opts[2] == "-all") then
+				eventDataBlacklist = _events
+			elseif (opts[2] == "-e") then
 				for k,v in next , eventDataBlacklist do
-					if v == e[3] then
+					if v == opts[3] then
 						break
 					end
 				end
-				table.insert(eventDataBlacklist,e[3])
+				table.insert(eventDataBlacklist,opts[3])
 			end
-		elseif (input[1] == "allow") then
-			if (input[2] == "-all") then
+		elseif (opts[1] == "allow") then
+			if (opts[2] == "-all") then
 				eventDataBlacklist = {}
-			elseif (input[2] == "-e") then
+			elseif (opts[2] == "-e") then
 				for k,v in next , eventDataBlacklist do
-					if (v == input[3]) then
+					if (v == opts[3]) then
 						table.remove(eventDataBlacklist,k)
 					end
 				end
 			end
-		elseif (input[1] == "restart") then
+		elseif (opts[1] == "restart") then
 
-		elseif (input[1] == "settop") then
+		elseif (opts[1] == "settop") then
 
-		elseif (input[1] == "throw") then --To be added
+		elseif (opts[1] == "throw") then --To be added
 
-		elseif (input[1] == "exit") then
+		elseif (opts[1] == "exit") then
 			break
-		elseif (input[1] == "sh") then
+		elseif (opts[1] == "sh") then
+			term.clear()
+			term.write("System going down for halt now!")
+			sleep(2)
+			os.shutdown()
+			
 
-		elseif (input[1] == "re") then
+		elseif (opts[1] == "re") then
+			term.clear()
+			term.write("System going down for reboot now!")
+			sleep(2)
+			os.reboot()
+		elseif (opts[1] == "l") then
+			print(textutils.serialize(eventDataBlacklist))
+		elseif (debug and opts[1] == "clear") then
+			term.setBackgroundColor(colors.black)
+			old_clear()
 
-		elseif (input[1] == "l") then
-
+		else
+			term.clear()
+			term.write("Unknown command: "..(opts and opts[1] or ""))
+			os.pullEvent()
 		end
 		term.clear()
 	end
 	_container:ResumeContainer()
 end
 
+
 function programController(prog,args)
 	local function yieldController()
 		while true do
 			local ev = {os.pullEvent()}
 			if (ev[1] == "yield_process") then
+				error("POOOOOP")
 				coroutine.yield()			
 			end
 		end
 	end
-	local ops = {create(function() shell.run(self.prog,unpack(self.args)) end),create(yieldController))
+	
+	local ops = {create(function() shell.run(_container.prog,unpack(_container.args)) end),create(yieldController)}
 	runSandbox(ops,#ops-1)
 end
 
-term = old_term
+end)
+
+term.clear = old_clear
+
+if (not _stat) then
+	print(err)
+	if (_err == "Terminated") then error() end
+	term.setBackgroundColor(colors.lightGray)
+	term.clear()
+	term.setCursorPos(1,2)
+	term.setBackgroundColor(colors.gray)
+	term.clearLine()
+	term.setCursorPos(1,3)
+	term.setBackgroundColor(colors.gray)
+	term.clearLine()
+	term.write(" Sandbox has encountered an error!")
+	term.setCursorPos(1,4)
+	term.setBackgroundColor(colors.gray)
+	term.clearLine()
+	term.setBackgroundColor(colors.lightGray)
+	term.setCursorPos(1,6)
+	print("Please try re-running sandbox. If you continue to experience crashes, please submit an issue to our Github repo for review.")
+	term.setCursorPos(1,10)
+	print("Exception:")
+	term.setTextColor(colors.black)
+	print("  ".._err)
+	print()
+	term.setTextColor(colors.white)
+	print("Press any key to exit...")
+	os.pullEvent("key")
+	term.setBackgroundColor(colors.black)
+	term.clear()
+	term.setCursorPos(1,1)
+end
 
 --instanceController()
 --term.clear = old_clear
