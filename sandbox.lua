@@ -129,7 +129,7 @@ function instanceController()
 		term.clearLine()
 		term.write("> ")
 	end
-
+    term.clear()
 	while true do
 		term.setCursorPos(2,1)
 		local input = read()
@@ -192,8 +192,8 @@ function instanceController()
 			term.setBackgroundColor(colors.black)
 			old_clear()
 		elseif (opts[1] == "vars") then			
-			print("Value: "..coroutine.status(eventCallerWhiteList.yield))
-			term.write("Value: "..coroutine.status(programThread))
+		    term.clear()
+			term.write("Value: ".._G['"'..opts[2]..'"'])
 		else
 			term.clear()
 			term.write("Unknown command: "..(opts and opts[1] or ""))
