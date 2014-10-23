@@ -16,7 +16,21 @@ local _NORESTART = true
 
 local _events = {"char","key","paste","timer","alarm","redstone","terminate","disk","disk_eject","peripheral","peripheral_detach","rednet_message","modem_message","http_success","http_failure","mouse_click","mouse_scroll","mouse_drag","monitor_touch","monitor_resize","term_resize","turtle_inventory"}
 
+local debugHook = {} --This is populated by the environment of the sandbox whenever a new variable is instantiated. When paused, one can view variables that are populated 
+local _sG = _G
 
+local function prepareDebugCapture()
+    setmetatable(_sG, {
+      __newindex = function (t, n, v)
+        if (t ~= debugHook) then
+            rawset(t, n, v)   -- do the actual set
+            debugHook.n = v
+        end
+      end,
+    })
+end
+
+prepareDebugCapture()
 
 local function create( first, ... ) --Derived from parallel API
 	if first ~= nil then
@@ -203,6 +217,9 @@ function programController()
 	--error("first")
 	programThread = programThread and programThread or create(function() shell.run(_container.prog,unpack(_container.args)) end)
 	local ops = {programThread,eventCallerWhiteList.yield}
+	local environment = {}
+	setmetatable(environment,{__index=_container:GetEnvironment()})
+	setfenv(1,environment)
 	--runSandbox(ops,#ops-1)
 	runSandbox(ops,1)
 	--programController()
@@ -216,7 +233,6 @@ local container = {
 		local controller = {create(instanceController),create(programController)}
 		self.process = controller[2]
 		self.controller = controller[1]
-		self.status = coroutine.status(self.process)
 		eventCallerWhiteList.controller = self.controller
 	end,
 	AuxilaryDefine = function(self)
@@ -226,6 +242,9 @@ local container = {
 		self.process = controller[2]
 		self.controller = controller[1]
 		eventCallerWhiteList.controller = self.controller
+	end,
+	GetEnvironment = function(self)
+	    return self.env
 	end,
 	GetProcess = function(self)
 		return self.process
@@ -277,9 +296,8 @@ if #tArgs > 2 then
 	end
 end
 
-_container = createContainer(_G,tArgs[1],tArgs[2],exArgs)
+_container = createContainer(_sG,tArgs[1],tArgs[2],exArgs)
 
---error("second")
 _container:AddSandboxDefinition()
 
 _container:StartContainer()
@@ -320,6 +338,3 @@ if (not _stat) then
 	term.clear()
 	term.setCursorPos(1,1)
 end
-
---instanceController()
---term.clear = old_clear
